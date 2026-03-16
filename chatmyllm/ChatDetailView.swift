@@ -1,0 +1,438 @@
+//
+//  ChatDetailView.swift
+//  chatmyllm
+//
+//  Created by Egor Glukhov on 15. 3. 2026.
+//
+
+import SwiftUI
+import SwiftData
+
+struct ChatDetailView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Bindable var chat: Chat
+
+    @State private var isLoading: Bool = false
+    @State private var errorMessage: String?
+    @State private var showSettingsAlert: Bool = false
+
+    @Environment(SettingsManager.self) private var settings
+    @FocusState private var isInputFocused: Bool
+    @State private var textEditorHeight: CGFloat = 60
+    @State private var availableModels: [OpenRouterModel] = []
+    @State private var isLoadingModels = false
+
+    var sortedMessages: [Message] {
+        chat.messages.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    var enabledAvailableModels: [OpenRouterModel] {
+        availableModels.filter { settings.enabledModels.contains($0.id) }
+    }
+
+    private func calculateHeight(for text: String) -> CGFloat {
+        let minHeight: CGFloat = 60
+        let maxHeight: CGFloat = 300
+
+        let lineHeight: CGFloat = settings.fontSize + 4
+        let lineCount = text.components(separatedBy: .newlines).count
+        let calculatedHeight = CGFloat(lineCount) * lineHeight + 8
+
+        return min(max(calculatedHeight, minHeight), maxHeight)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Messages list
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(sortedMessages) { message in
+                        MessageBubbleView(message: message)
+                            .id(message.id)
+                    }
+
+                    if isLoading {
+                        HStack {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Processing...", comment: "Loading indicator text")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding()
+                        .id("loading")
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom)
+            }
+            .defaultScrollAnchor(.bottom)
+            .id(chat.id)
+
+            // Input area
+            VStack(spacing: 8) {
+                if let error = errorMessage {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundColor(.orange)
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                        Spacer()
+                        Button(String(localized: "Close", comment: "Close error button")) {
+                            errorMessage = nil
+                        }
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                }
+
+                TextEditor(text: $chat.draft)
+                    .font(settings.customFont)
+                    .frame(height: textEditorHeight)
+                    .scrollContentBackground(.hidden)
+                    .padding(4)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+                    .focused($isInputFocused)
+                    .onChange(of: chat.draft) { oldValue, newValue in
+                        textEditorHeight = calculateHeight(for: newValue)
+                    }
+                    .onKeyPress { press in
+                        // Only handle return key
+                        if press.key == .return {
+                            // Check if shift is pressed
+                            if press.modifiers.contains(.shift) {
+                                // Shift is pressed, allow new line
+                                return .ignored
+                            }
+                            // No shift, send message if not empty
+                            if !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                sendMessage()
+                            }
+                            return .handled
+                        }
+                        return .ignored
+                    }
+                    .padding()
+            }
+        }
+        .navigationTitle(chat.title)
+        .toolbarBackground(Color(nsColor: .controlBackgroundColor).opacity(0.88), for: .windowToolbar)
+        .toolbarBackground(.visible, for: .windowToolbar)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if isLoadingModels {
+                    ProgressView()
+                        .controlSize(.small)
+                } else if !enabledAvailableModels.isEmpty {
+                    Picker("", selection: $chat.modelId) {
+                        ForEach(enabledAvailableModels) { model in
+                            Text(model.name).tag(model.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(minWidth: 200)
+                } else {
+                    Text("No models available", comment: "No models message")
+                        .foregroundColor(.secondary)
+                        .font(.caption)
+                }
+            }
+        }
+        .alert(String(localized: "API Key Required", comment: "Alert title"), isPresented: $showSettingsAlert) {
+            Button(String(localized: "Open Settings", comment: "Open settings button")) {
+                openSettings()
+            }
+            Button(String(localized: "Cancel", comment: "Cancel button"), role: .cancel) {}
+        } message: {
+            Text("Please set OpenRouter API key in settings", comment: "Alert message")
+        }
+        .onAppear {
+            // Set initial height based on draft
+            textEditorHeight = calculateHeight(for: chat.draft)
+
+            // Load available models
+            Task {
+                await loadModels()
+            }
+        }
+        .onChange(of: chat.id) { oldValue, newValue in
+            // Update height when chat changes
+            textEditorHeight = calculateHeight(for: chat.draft)
+            // Set focus when chat changes
+            isInputFocused = true
+        }
+    }
+
+    private func loadModels() async {
+        guard availableModels.isEmpty else { return }
+
+        isLoadingModels = true
+        do {
+            let models = try await OpenRouterService.shared.fetchModels()
+            await MainActor.run {
+                availableModels = models
+                isLoadingModels = false
+            }
+        } catch {
+            await MainActor.run {
+                isLoadingModels = false
+            }
+        }
+    }
+
+    private func sendMessage() {
+        guard !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        // Check API key
+        if !settings.hasApiKey {
+            showSettingsAlert = true
+            return
+        }
+
+        let userMessage = Message(content: chat.draft, isFromUser: true, chat: chat)
+        chat.messages.append(userMessage)
+        modelContext.insert(userMessage)
+
+        let currentMessage = chat.draft
+        chat.draft = ""
+        textEditorHeight = calculateHeight(for: "") // Reset to minimum height
+        errorMessage = nil
+        isLoading = true
+
+        // Keep focus on input field after sending
+        isInputFocused = true
+
+        Task {
+            do {
+                let response = try await OpenRouterService.shared.sendMessage(messages: chat.messages, model: chat.modelId)
+
+                await MainActor.run {
+                    let assistantMessage = Message(content: response, isFromUser: false, chat: chat)
+                    chat.messages.append(assistantMessage)
+                    modelContext.insert(assistantMessage)
+
+                    // Update chat title with first message if needed
+                    let newChatTitle = String(localized: "New Chat", comment: "Default chat title")
+                    if chat.title == newChatTitle && !currentMessage.isEmpty {
+                        let title = String(currentMessage.prefix(50))
+                        chat.title = title
+                    }
+
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    isLoading = false
+                }
+            }
+        }
+    }
+
+    private func openSettings() {
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+}
+
+struct MessageBubbleView: View {
+    let message: Message
+    @Environment(SettingsManager.self) private var settings
+
+    var body: some View {
+        HStack(alignment: .top) {
+            if message.isFromUser {
+                Spacer(minLength: 60)
+            }
+
+            VStack(alignment: message.isFromUser ? .trailing : .leading, spacing: 4) {
+                MarkdownText(content: message.content, fontName: settings.fontName, fontSize: settings.fontSize, lineSpacing: settings.lineSpacing, isFromUser: message.isFromUser)
+                    .textSelection(.enabled)
+                    .padding(10)
+                    .background(message.isFromUser ? Color.blue : Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(12)
+
+                Text(message.timestamp, format: .dateTime)
+                    .font(.custom(settings.fontName, size: settings.fontSize * 0.7))
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 10)
+            }
+
+            if !message.isFromUser {
+                Spacer(minLength: 60)
+            }
+        }
+    }
+}
+
+struct MarkdownText: View {
+    let content: String
+    let fontName: String
+    let fontSize: CGFloat
+    let lineSpacing: CGFloat
+    let isFromUser: Bool
+
+    private var formattedText: Text {
+        // Split content into code blocks and regular text
+        let parts = parseMarkdown(content)
+        var result = Text("")
+
+        for part in parts {
+            switch part {
+            case .text(let text):
+                result = result + formatText(text)
+            case .codeBlock(let code, let language):
+                result = result + formatCodeBlock(code)
+            case .inlineCode(let code):
+                result = result + formatInlineCode(code)
+            }
+        }
+
+        return result
+    }
+
+    var body: some View {
+        formattedText
+            .font(.custom(fontName, size: fontSize))
+            .lineSpacing(lineSpacing)
+            .foregroundColor(isFromUser ? .white : .primary)
+    }
+
+    private func formatText(_ text: String) -> Text {
+        do {
+            let attributedString = try AttributedString(
+                markdown: text,
+                options: AttributedString.MarkdownParsingOptions(
+                    interpretedSyntax: .inlineOnlyPreservingWhitespace
+                )
+            )
+            return Text(attributedString)
+        } catch {
+            return Text(text)
+        }
+    }
+
+    private func formatCodeBlock(_ code: String) -> Text {
+        Text("\n")
+        + Text(code)
+            .font(.system(size: fontSize - 1, design: .monospaced))
+            .foregroundColor(isFromUser ? Color.white.opacity(0.95) : .primary)
+        + Text("\n")
+    }
+
+    private func formatInlineCode(_ code: String) -> Text {
+        Text(code)
+            .font(.system(size: fontSize - 1, design: .monospaced))
+            .foregroundColor(isFromUser ? Color.white.opacity(0.95) : .primary)
+    }
+
+    private func parseMarkdown(_ markdown: String) -> [MarkdownPart] {
+        var parts: [MarkdownPart] = []
+        var currentText = ""
+        var position = markdown.startIndex
+
+        while position < markdown.endIndex {
+            // Check for code blocks with triple backticks
+            if markdown[position...].hasPrefix("```") {
+                // Save accumulated text
+                if !currentText.isEmpty {
+                    parts.append(.text(currentText))
+                    currentText = ""
+                }
+
+                // Find the end of the code block
+                if let codeBlockRange = extractCodeBlock(from: markdown, startingAt: position) {
+                    let codeContent = String(markdown[codeBlockRange.content])
+                    parts.append(.codeBlock(codeContent, language: codeBlockRange.language))
+                    position = codeBlockRange.end
+                    continue
+                }
+            }
+
+            // Check for inline code with single backticks
+            if markdown[position] == "`" && !markdown[position...].hasPrefix("```") {
+                // Save accumulated text
+                if !currentText.isEmpty {
+                    parts.append(.text(currentText))
+                    currentText = ""
+                }
+
+                // Find the closing backtick
+                var nextPos = markdown.index(after: position)
+                while nextPos < markdown.endIndex && markdown[nextPos] != "`" {
+                    nextPos = markdown.index(after: nextPos)
+                }
+
+                if nextPos < markdown.endIndex {
+                    let codeContent = String(markdown[markdown.index(after: position)..<nextPos])
+                    parts.append(.inlineCode(codeContent))
+                    position = markdown.index(after: nextPos)
+                    continue
+                }
+            }
+
+            currentText.append(markdown[position])
+            position = markdown.index(after: position)
+        }
+
+        // Add any remaining text
+        if !currentText.isEmpty {
+            parts.append(.text(currentText))
+        }
+
+        return parts.isEmpty ? [.text(markdown)] : parts
+    }
+
+    private func extractCodeBlock(from markdown: String, startingAt position: String.Index) -> (content: Range<String.Index>, language: String?, end: String.Index)? {
+        var currentPos = markdown.index(position, offsetBy: 3) // Skip ```
+
+        // Skip language identifier if present
+        var language: String?
+        var lineStart = currentPos
+        while currentPos < markdown.endIndex && markdown[currentPos] != "\n" {
+            currentPos = markdown.index(after: currentPos)
+        }
+
+        if currentPos > lineStart {
+            language = String(markdown[lineStart..<currentPos]).trimmingCharacters(in: .whitespaces)
+            if !language!.isEmpty {
+                // Language found
+            } else {
+                language = nil
+            }
+        }
+
+        if currentPos < markdown.endIndex {
+            currentPos = markdown.index(after: currentPos) // Skip newline
+        }
+
+        let contentStart = currentPos
+
+        // Find closing ```
+        while currentPos < markdown.endIndex {
+            if markdown[currentPos...].hasPrefix("```") {
+                let contentEnd = currentPos
+                let endPos = markdown.index(currentPos, offsetBy: 3, limitedBy: markdown.endIndex) ?? markdown.endIndex
+
+                return (content: contentStart..<contentEnd, language: language, end: endPos)
+            }
+            currentPos = markdown.index(after: currentPos)
+        }
+
+        // No closing ``` found, treat rest as code
+        return (content: contentStart..<markdown.endIndex, language: language, end: markdown.endIndex)
+    }
+}
+
+enum MarkdownPart {
+    case text(String)
+    case codeBlock(String, language: String?)
+    case inlineCode(String)
+}
