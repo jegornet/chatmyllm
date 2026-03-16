@@ -15,6 +15,7 @@ struct OpenRouterMessage: Codable {
 struct OpenRouterRequest: Codable {
     let model: String
     let messages: [OpenRouterMessage]
+    let stream: Bool
 }
 
 struct OpenRouterChoice: Codable {
@@ -23,6 +24,18 @@ struct OpenRouterChoice: Codable {
 
 struct OpenRouterResponse: Codable {
     let choices: [OpenRouterChoice]
+}
+
+struct OpenRouterStreamDelta: Codable {
+    let content: String?
+}
+
+struct OpenRouterStreamChoice: Codable {
+    let delta: OpenRouterStreamDelta
+}
+
+struct OpenRouterStreamResponse: Codable {
+    let choices: [OpenRouterStreamChoice]
 }
 
 enum OpenRouterError: Error, LocalizedError {
@@ -63,7 +76,8 @@ class OpenRouterService {
 
         let request = OpenRouterRequest(
             model: model,
-            messages: openRouterMessages
+            messages: openRouterMessages,
+            stream: false
         )
 
         var urlRequest = URLRequest(url: URL(string: baseURL)!)
@@ -96,6 +110,90 @@ class OpenRouterService {
             return firstChoice.message.content
         } catch {
             throw OpenRouterError.networkError("Error decoding response: \(error.localizedDescription)")
+        }
+    }
+
+    func sendMessageStreaming(
+        messages: [Message],
+        model: String = "anthropic/claude-3.5-sonnet",
+        onChunk: @escaping (String) -> Void
+    ) async throws {
+        guard !SettingsManager.shared.apiKey.isEmpty else {
+            throw OpenRouterError.noApiKey
+        }
+
+        let openRouterMessages = messages.map { message in
+            OpenRouterMessage(
+                role: message.isFromUser ? "user" : "assistant",
+                content: message.content
+            )
+        }
+
+        let request = OpenRouterRequest(
+            model: model,
+            messages: openRouterMessages,
+            stream: true
+        )
+
+        var urlRequest = URLRequest(url: URL(string: baseURL)!)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("Bearer \(SettingsManager.shared.apiKey)", forHTTPHeaderField: "Authorization")
+
+        do {
+            urlRequest.httpBody = try JSONEncoder().encode(request)
+        } catch {
+            throw OpenRouterError.networkError("Error encoding request")
+        }
+
+        let (asyncBytes, response) = try await URLSession.shared.bytes(for: urlRequest)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw OpenRouterError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            throw OpenRouterError.networkError("HTTP \(httpResponse.statusCode)")
+        }
+
+        // Process SSE stream
+        var lineBuffer = Data()
+
+        for try await byte in asyncBytes {
+            lineBuffer.append(byte)
+
+            // Check if we have a complete line (ends with \n)
+            if byte == UInt8(ascii: "\n") {
+                guard let line = String(data: lineBuffer, encoding: .utf8) else {
+                    lineBuffer = Data()
+                    continue
+                }
+
+                lineBuffer = Data()
+
+                // Process SSE data lines
+                if line.hasPrefix("data: ") {
+                    let jsonString = String(line.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines)
+
+                    // Skip [DONE] message
+                    if jsonString == "[DONE]" {
+                        continue
+                    }
+
+                    if let data = jsonString.data(using: .utf8) {
+                        do {
+                            let streamResponse = try JSONDecoder().decode(OpenRouterStreamResponse.self, from: data)
+                            if let content = streamResponse.choices.first?.delta.content {
+                                await MainActor.run {
+                                    onChunk(content)
+                                }
+                            }
+                        } catch {
+                            // Skip invalid JSON chunks
+                        }
+                    }
+                }
+            }
         }
     }
 

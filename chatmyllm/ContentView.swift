@@ -45,7 +45,6 @@ struct EmptyStateView: View {
     @Binding var selectedChat: Chat?
 
     @State private var messageText: String = ""
-    @State private var isLoading: Bool = false
     @State private var errorMessage: String?
     @State private var showSettingsAlert: Bool = false
     @Environment(SettingsManager.self) private var settings
@@ -84,18 +83,6 @@ struct EmptyStateView: View {
             }
 
             Spacer()
-
-            // Loading indicator
-            if isLoading {
-                HStack {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Processing...", comment: "Loading indicator text")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.bottom, 8)
-            }
 
             // Input area
             VStack(spacing: 8) {
@@ -219,40 +206,16 @@ struct EmptyStateView: View {
         newChat.messages.append(userMessage)
         modelContext.insert(userMessage)
 
-        let currentMessage = messageText
+        // Update chat title with first message
+        let title = String(messageText.prefix(50))
+        newChat.title = title
+
         messageText = ""
         textEditorHeight = calculateHeight(for: "") // Reset to minimum height
         errorMessage = nil
-        isLoading = true
 
-        // Send message to API
-        Task {
-            do {
-                let response = try await OpenRouterService.shared.sendMessage(messages: newChat.messages, model: newChat.modelId)
-
-                await MainActor.run {
-                    let assistantMessage = Message(content: response, isFromUser: false, chat: newChat)
-                    newChat.messages.append(assistantMessage)
-                    modelContext.insert(assistantMessage)
-
-                    // Update chat title with first message
-                    let title = String(currentMessage.prefix(50))
-                    newChat.title = title
-
-                    isLoading = false
-
-                    // Select the new chat after receiving response
-                    selectedChat = newChat
-                }
-            } catch {
-                await MainActor.run {
-                    errorMessage = error.localizedDescription
-                    isLoading = false
-                    // Select the chat even on error so user can see the error in chat view
-                    selectedChat = newChat
-                }
-            }
-        }
+        // Select the new chat immediately - streaming will start in ChatDetailView
+        selectedChat = newChat
     }
 
     private func openSettings() {

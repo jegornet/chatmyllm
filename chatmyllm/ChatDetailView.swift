@@ -15,6 +15,11 @@ struct ChatDetailView: View {
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
     @State private var showSettingsAlert: Bool = false
+    @State private var streamingContent: String = ""
+    @State private var isStreaming: Bool = false
+    @State private var streamingTask: Task<Void, Never>? = nil
+    @State private var scrollProxy: ScrollViewProxy? = nil
+    @State private var streamingChatId: UUID? = nil
 
     @Environment(SettingsManager.self) private var settings
     @FocusState private var isInputFocused: Bool
@@ -44,30 +49,46 @@ struct ChatDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Messages list
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(sortedMessages) { message in
-                        MessageBubbleView(message: message)
-                            .id(message.id)
-                    }
-
-                    if isLoading {
-                        HStack {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Processing...", comment: "Loading indicator text")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        ForEach(sortedMessages) { message in
+                            MessageBubbleView(message: message)
+                                .id(message.id)
                         }
-                        .padding()
-                        .id("loading")
+
+                        if isStreaming && streamingChatId == chat.id {
+                            StreamingMessageView(content: streamingContent)
+                                .id("streaming")
+                        } else if isLoading {
+                            HStack {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Processing...", comment: "Loading indicator text")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding()
+                            .id("loading")
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom)
+                }
+                .defaultScrollAnchor(.bottom)
+                .id(chat.id)
+                .onChange(of: streamingContent) { oldValue, newValue in
+                    // Auto-scroll to bottom during streaming in THIS chat
+                    if isStreaming && streamingChatId == chat.id {
+                        withAnimation {
+                            proxy.scrollTo("streaming", anchor: .bottom)
+                        }
                     }
                 }
-                .padding(.horizontal)
-                .padding(.bottom)
+                .onAppear {
+                    scrollProxy = proxy
+                }
             }
-            .defaultScrollAnchor(.bottom)
-            .id(chat.id)
 
             // Input area
             VStack(spacing: 8) {
@@ -89,38 +110,55 @@ struct ChatDetailView: View {
                     .padding(.top, 8)
                 }
 
-                TextEditor(text: $chat.draft)
-                    .font(settings.customFont)
-                    .frame(height: textEditorHeight)
-                    .scrollContentBackground(.hidden)
-                    .padding(4)
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .cornerRadius(8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
-                    .focused($isInputFocused)
-                    .onChange(of: chat.draft) { oldValue, newValue in
-                        textEditorHeight = calculateHeight(for: newValue)
-                    }
-                    .onKeyPress { press in
-                        // Only handle return key
-                        if press.key == .return {
-                            // Check if shift is pressed
-                            if press.modifiers.contains(.shift) {
-                                // Shift is pressed, allow new line
-                                return .ignored
-                            }
-                            // No shift, send message if not empty
-                            if !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                sendMessage()
-                            }
-                            return .handled
+                ZStack(alignment: .topTrailing) {
+                    TextEditor(text: $chat.draft)
+                        .font(settings.customFont)
+                        .frame(height: textEditorHeight)
+                        .scrollContentBackground(.hidden)
+                        .padding(4)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        )
+                        .focused($isInputFocused)
+                        .onChange(of: chat.draft) { oldValue, newValue in
+                            textEditorHeight = calculateHeight(for: newValue)
                         }
-                        return .ignored
+                        .onKeyPress { press in
+                            // Only handle return key
+                            if press.key == .return {
+                                // Check if shift is pressed
+                                if press.modifiers.contains(.shift) {
+                                    // Shift is pressed, allow new line
+                                    return .ignored
+                                }
+                                // Don't send during streaming in THIS chat
+                                if isStreaming && streamingChatId == chat.id {
+                                    return .handled
+                                }
+                                // No shift, send message if not empty
+                                if !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    sendMessage()
+                                }
+                                return .handled
+                            }
+                            return .ignored
+                        }
+
+                    if isStreaming && streamingChatId == chat.id {
+                        Button(action: stopStreaming) {
+                            Image(systemName: "stop.fill")
+                                .foregroundColor(.blue)
+                                .imageScale(.medium)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(8)
+                        .help("Stop generation")
                     }
-                    .padding()
+                }
+                .padding()
             }
         }
         .navigationTitle(chat.title)
@@ -139,6 +177,7 @@ struct ChatDetailView: View {
                     }
                     .pickerStyle(.menu)
                     .frame(minWidth: 200)
+                    .disabled(isStreaming)
                 } else {
                     Text("No models available", comment: "No models message")
                         .foregroundColor(.secondary)
@@ -161,6 +200,35 @@ struct ChatDetailView: View {
             // Load available models
             Task {
                 await loadModels()
+            }
+
+            // Auto-send if last message is from user (new chat from EmptyStateView)
+            let shouldAutoSend = sortedMessages.last?.isFromUser == true && !isStreaming
+            if shouldAutoSend {
+                sendMessage(autoSend: true)
+            } else {
+                // Set focus on input field when opening existing chat
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isInputFocused = true
+                }
+            }
+        }
+        .onDisappear {
+            // Cancel streaming when view disappears (chat switched)
+            if isStreaming && streamingChatId == chat.id {
+                streamingTask?.cancel()
+                streamingTask = nil
+
+                // Save partial response if any to the current chat
+                if !streamingContent.isEmpty {
+                    let assistantMessage = Message(content: streamingContent, isFromUser: false, chat: chat)
+                    chat.messages.append(assistantMessage)
+                    modelContext.insert(assistantMessage)
+                }
+
+                isStreaming = false
+                streamingContent = ""
+                streamingChatId = nil
             }
         }
         .onChange(of: chat.id) { oldValue, newValue in
@@ -188,8 +256,11 @@ struct ChatDetailView: View {
         }
     }
 
-    private func sendMessage() {
-        guard !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    private func sendMessage(autoSend: Bool = false) {
+        // For auto-send, we don't check draft - message is already in chat.messages
+        if !autoSend {
+            guard !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        }
 
         // Check API key
         if !settings.hasApiKey {
@@ -197,44 +268,117 @@ struct ChatDetailView: View {
             return
         }
 
-        let userMessage = Message(content: chat.draft, isFromUser: true, chat: chat)
-        chat.messages.append(userMessage)
-        modelContext.insert(userMessage)
-
-        let currentMessage = chat.draft
-        chat.draft = ""
-        textEditorHeight = calculateHeight(for: "") // Reset to minimum height
+        // Set streaming state immediately before any UI updates
         errorMessage = nil
-        isLoading = true
+        streamingContent = ""
+        isStreaming = true
+        streamingChatId = chat.id
 
-        // Keep focus on input field after sending
-        isInputFocused = true
+        let currentMessage: String
+        if !autoSend {
+            // Manual send - create user message from draft
+            let userMessage = Message(content: chat.draft, isFromUser: true, chat: chat)
+            chat.messages.append(userMessage)
+            modelContext.insert(userMessage)
+            currentMessage = chat.draft
+            chat.draft = ""
+            textEditorHeight = calculateHeight(for: "") // Reset to minimum height
 
-        Task {
-            do {
-                let response = try await OpenRouterService.shared.sendMessage(messages: chat.messages, model: chat.modelId)
-
-                await MainActor.run {
-                    let assistantMessage = Message(content: response, isFromUser: false, chat: chat)
-                    chat.messages.append(assistantMessage)
-                    modelContext.insert(assistantMessage)
-
-                    // Update chat title with first message if needed
-                    let newChatTitle = String(localized: "New Chat", comment: "Default chat title")
-                    if chat.title == newChatTitle && !currentMessage.isEmpty {
-                        let title = String(currentMessage.prefix(50))
-                        chat.title = title
-                    }
-
-                    isLoading = false
+            // Scroll to the user's message
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation {
+                    scrollProxy?.scrollTo(userMessage.id, anchor: .bottom)
                 }
-            } catch {
-                await MainActor.run {
-                    errorMessage = error.localizedDescription
-                    isLoading = false
+            }
+        } else {
+            // Auto-send - message already exists, get it for title update
+            currentMessage = sortedMessages.last?.content ?? ""
+
+            // Scroll to the user's message
+            if let lastMessage = sortedMessages.last {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    withAnimation {
+                        scrollProxy?.scrollTo(lastMessage.id, anchor: .bottom)
+                    }
                 }
             }
         }
+
+        // After a short delay, scroll to streaming indicator
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            withAnimation {
+                scrollProxy?.scrollTo("streaming", anchor: .bottom)
+            }
+        }
+
+        streamingTask = Task {
+            do {
+                try await OpenRouterService.shared.sendMessageStreaming(
+                    messages: chat.messages,
+                    model: chat.modelId
+                ) { chunk in
+                    streamingContent += chunk
+                }
+
+                await MainActor.run {
+                    // Only save if not cancelled
+                    if !streamingContent.isEmpty {
+                        // Create the final message with the complete streamed content
+                        let assistantMessage = Message(content: streamingContent, isFromUser: false, chat: chat)
+                        chat.messages.append(assistantMessage)
+                        modelContext.insert(assistantMessage)
+
+                        // Update chat title with first message if needed
+                        let newChatTitle = String(localized: "New Chat", comment: "Default chat title")
+                        if chat.title == newChatTitle && !currentMessage.isEmpty {
+                            let title = String(currentMessage.prefix(50))
+                            chat.title = title
+                        }
+                    }
+
+                    isStreaming = false
+                    streamingContent = ""
+                    streamingTask = nil
+                    streamingChatId = nil
+
+                    // Restore focus to input field
+                    isInputFocused = true
+                }
+            } catch {
+                await MainActor.run {
+                    // Don't show error if task was cancelled
+                    if !Task.isCancelled {
+                        errorMessage = error.localizedDescription
+                    }
+                    isStreaming = false
+                    streamingContent = ""
+                    streamingTask = nil
+                    streamingChatId = nil
+
+                    // Restore focus to input field
+                    isInputFocused = true
+                }
+            }
+        }
+    }
+
+    private func stopStreaming() {
+        streamingTask?.cancel()
+        streamingTask = nil
+
+        // Save partial response if any
+        if !streamingContent.isEmpty {
+            let assistantMessage = Message(content: streamingContent, isFromUser: false, chat: chat)
+            chat.messages.append(assistantMessage)
+            modelContext.insert(assistantMessage)
+        }
+
+        isStreaming = false
+        streamingContent = ""
+        streamingChatId = nil
+
+        // Restore focus to input field after stopping
+        isInputFocused = true
     }
 
     private func openSettings() {
@@ -435,4 +579,41 @@ enum MarkdownPart {
     case text(String)
     case codeBlock(String, language: String?)
     case inlineCode(String)
+}
+
+struct StreamingMessageView: View {
+    let content: String
+    @Environment(SettingsManager.self) private var settings
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                if !content.isEmpty {
+                    MarkdownText(
+                        content: content,
+                        fontName: settings.fontName,
+                        fontSize: settings.fontSize,
+                        lineSpacing: settings.lineSpacing,
+                        isFromUser: false
+                    )
+                    .textSelection(.enabled)
+                    .padding(10)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(12)
+                } else {
+                    // Show a typing indicator when streaming has started but no content yet
+                    HStack {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Processing...", comment: "Loading indicator text")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(10)
+                }
+            }
+
+            Spacer(minLength: 60)
+        }
+    }
 }
