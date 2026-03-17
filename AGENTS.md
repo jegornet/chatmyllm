@@ -108,7 +108,9 @@ chatmyllm/
 - Delayed scroll after message send to ensure DOM update
 
 **Critical Fix:**
-LazyVStack's prefetch system conflicts with rapid scroll updates during streaming. Original implementation crashed with `EXC_BREAKPOINT` in `LazyLayoutViewCacheC14signalPrefetchyyFyycfU_`. Fixed by throttling scroll updates to 0.1 second intervals using `lastScrollTime` tracking.
+LazyVStack's prefetch system conflicts with rapid scroll updates during streaming. Original implementation crashed with `EXC_BREAKPOINT` in `LazyLayoutViewCacheC14signalPrefetchyyFyycfU_`. Fixed by:
+1. Throttling scroll updates to 0.1 second intervals (max 10 updates/sec) using `lastScrollTime` tracking
+2. Removing dynamic height recalculation entirely - TextEditor now uses fixed height with `.frame(height: 100)`
 
 ### 5. Input Field Focus Management
 **Behavior:**
@@ -326,7 +328,7 @@ Three-column layout:
 3. **UTF-8 corruption:** Buffer bytes before String conversion
 4. **Scroll not working:** Ensure .id() on ScrollView for reset
 5. **Settings not updating:** Use @Bindable not @State copy
-6. **LazyVStack crash during streaming:** Throttle scroll updates (max 10 updates/sec) to prevent layout conflicts
+6. **LazyVStack constraint crash:** Throttle scroll updates (max 10/sec) and avoid dynamic height recalculation in favor of automatic sizing
 
 ### Debugging Tips
 - Check streaming state: isStreaming, streamingChatId, streamingContent

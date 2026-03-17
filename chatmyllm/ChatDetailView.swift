@@ -24,7 +24,6 @@ struct ChatDetailView: View {
 
     @Environment(SettingsManager.self) private var settings
     @FocusState private var isInputFocused: Bool
-    @State private var textEditorHeight: CGFloat = 60
     @State private var availableModels: [OpenRouterModel] = []
     @State private var isLoadingModels = false
 
@@ -34,17 +33,6 @@ struct ChatDetailView: View {
 
     var enabledAvailableModels: [OpenRouterModel] {
         availableModels.filter { settings.enabledModels.contains($0.id) }
-    }
-
-    private func calculateHeight(for text: String) -> CGFloat {
-        let minHeight: CGFloat = 60
-        let maxHeight: CGFloat = 300
-
-        let lineHeight: CGFloat = settings.fontSize + 4
-        let lineCount = text.components(separatedBy: .newlines).count
-        let calculatedHeight = CGFloat(lineCount) * lineHeight + 8
-
-        return min(max(calculatedHeight, minHeight), maxHeight)
     }
 
     var body: some View {
@@ -117,7 +105,7 @@ struct ChatDetailView: View {
                 ZStack(alignment: .topTrailing) {
                     TextEditor(text: $chat.draft)
                         .font(settings.customFont)
-                        .frame(height: textEditorHeight)
+                        .frame(height: 100)
                         .scrollContentBackground(.hidden)
                         .padding(4)
                         .background(Color(nsColor: .controlBackgroundColor))
@@ -127,9 +115,6 @@ struct ChatDetailView: View {
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
                         .focused($isInputFocused)
-                        .onChange(of: chat.draft) { oldValue, newValue in
-                            textEditorHeight = calculateHeight(for: newValue)
-                        }
                         .onKeyPress { press in
                             // Only handle return key
                             if press.key == .return {
@@ -198,9 +183,6 @@ struct ChatDetailView: View {
             Text("Please set OpenRouter API key in settings", comment: "Alert message")
         }
         .onAppear {
-            // Set initial height based on draft
-            textEditorHeight = calculateHeight(for: chat.draft)
-
             // Load available models
             Task {
                 await loadModels()
@@ -236,8 +218,6 @@ struct ChatDetailView: View {
             }
         }
         .onChange(of: chat.id) { oldValue, newValue in
-            // Update height when chat changes
-            textEditorHeight = calculateHeight(for: chat.draft)
             // Set focus when chat changes
             isInputFocused = true
         }
@@ -287,7 +267,6 @@ struct ChatDetailView: View {
             modelContext.insert(userMessage)
             currentMessage = chat.draft
             chat.draft = ""
-            textEditorHeight = calculateHeight(for: "") // Reset to minimum height
 
             // Scroll to the user's message
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {

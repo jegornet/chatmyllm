@@ -49,24 +49,12 @@ struct EmptyStateView: View {
     @State private var showSettingsAlert: Bool = false
     @Environment(SettingsManager.self) private var settings
     @FocusState private var isInputFocused: Bool
-    @State private var textEditorHeight: CGFloat = 60
     @State private var availableModels: [OpenRouterModel] = []
     @State private var isLoadingModels = false
     @State private var selectedModelId: String = ""
 
     var enabledAvailableModels: [OpenRouterModel] {
         availableModels.filter { settings.enabledModels.contains($0.id) }
-    }
-
-    private func calculateHeight(for text: String) -> CGFloat {
-        let minHeight: CGFloat = 60
-        let maxHeight: CGFloat = 300
-
-        let lineHeight: CGFloat = settings.fontSize + 4
-        let lineCount = text.components(separatedBy: .newlines).count
-        let calculatedHeight = CGFloat(lineCount) * lineHeight + 8
-
-        return min(max(calculatedHeight, minHeight), maxHeight)
     }
 
     var body: some View {
@@ -107,7 +95,7 @@ struct EmptyStateView: View {
                 ZStack(alignment: .topLeading) {
                     TextEditor(text: $messageText)
                         .font(settings.customFont)
-                        .frame(height: textEditorHeight)
+                        .frame(height: 100)
                         .scrollContentBackground(.hidden)
                         .padding(4)
                         .background(Color(nsColor: .controlBackgroundColor))
@@ -117,9 +105,6 @@ struct EmptyStateView: View {
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
                         .focused($isInputFocused)
-                        .onChange(of: messageText) { oldValue, newValue in
-                            textEditorHeight = calculateHeight(for: newValue)
-                        }
                         .onKeyPress { press in
                             if press.key == .return {
                                 if press.modifiers.contains(.shift) {
@@ -211,7 +196,6 @@ struct EmptyStateView: View {
         newChat.title = title
 
         messageText = ""
-        textEditorHeight = calculateHeight(for: "") // Reset to minimum height
         errorMessage = nil
 
         // Select the new chat immediately - streaming will start in ChatDetailView
