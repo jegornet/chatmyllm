@@ -104,7 +104,11 @@ chatmyllm/
 - `.defaultScrollAnchor(.bottom)` for initial positioning
 - `.id(chat.id)` forces ScrollView recreation on chat change
 - `.onChange(of: streamingContent)` triggers scroll during streaming
+- **Throttled scroll updates:** Maximum 10 updates/sec to prevent LazyVStack layout conflicts
 - Delayed scroll after message send to ensure DOM update
+
+**Critical Fix:**
+LazyVStack's prefetch system conflicts with rapid scroll updates during streaming. Original implementation crashed with `EXC_BREAKPOINT` in `LazyLayoutViewCacheC14signalPrefetchyyFyycfU_`. Fixed by throttling scroll updates to 0.1 second intervals using `lastScrollTime` tracking.
 
 ### 5. Input Field Focus Management
 **Behavior:**
@@ -307,11 +311,12 @@ Three-column layout:
 
 ### 0.2 (Streaming Update)
 - Real-time streaming responses
-- Auto-scroll during streaming
+- Auto-scroll during streaming (throttled to prevent crashes)
 - Stop button to cancel generation
 - Per-chat streaming isolation
 - Improved focus management
 - UTF-8 encoding fixes
+- Fixed crash in LazyVStack during rapid scroll updates
 
 ## Development Notes
 
@@ -321,6 +326,7 @@ Three-column layout:
 3. **UTF-8 corruption:** Buffer bytes before String conversion
 4. **Scroll not working:** Ensure .id() on ScrollView for reset
 5. **Settings not updating:** Use @Bindable not @State copy
+6. **LazyVStack crash during streaming:** Throttle scroll updates (max 10 updates/sec) to prevent layout conflicts
 
 ### Debugging Tips
 - Check streaming state: isStreaming, streamingChatId, streamingContent

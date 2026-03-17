@@ -20,6 +20,7 @@ struct ChatDetailView: View {
     @State private var streamingTask: Task<Void, Never>? = nil
     @State private var scrollProxy: ScrollViewProxy? = nil
     @State private var streamingChatId: UUID? = nil
+    @State private var lastScrollTime: Date = .distantPast
 
     @Environment(SettingsManager.self) private var settings
     @FocusState private var isInputFocused: Bool
@@ -79,8 +80,11 @@ struct ChatDetailView: View {
                 .id(chat.id)
                 .onChange(of: streamingContent) { oldValue, newValue in
                     // Auto-scroll to bottom during streaming in THIS chat
+                    // Throttle to avoid excessive layout updates (prevents crashes)
                     if isStreaming && streamingChatId == chat.id {
-                        withAnimation {
+                        let now = Date()
+                        if now.timeIntervalSince(lastScrollTime) > 0.1 {
+                            lastScrollTime = now
                             proxy.scrollTo("streaming", anchor: .bottom)
                         }
                     }
@@ -273,6 +277,7 @@ struct ChatDetailView: View {
         streamingContent = ""
         isStreaming = true
         streamingChatId = chat.id
+        lastScrollTime = .distantPast
 
         let currentMessage: String
         if !autoSend {
