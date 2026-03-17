@@ -34,7 +34,7 @@ struct ChatListView: View {
 
                         Spacer()
 
-                        if !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        if !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedChat?.id != chat.id {
                             Image(systemName: "pencil")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
