@@ -40,40 +40,49 @@ struct ChatDetailView: View {
             // Messages list
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(sortedMessages) { message in
-                            MessageBubbleView(message: message)
-                                .id(message.id)
+                    VStack(alignment: .leading, spacing: 0) {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(sortedMessages) { message in
+                                MessageBubbleView(message: message)
+                                    .id(message.id)
+                            }
+
+                            if isLoading {
+                                HStack {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Processing...", comment: "Loading indicator text")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding()
+                                .id("loading")
+                            }
                         }
 
+                        // Streaming view OUTSIDE LazyVStack to avoid prefetch conflicts
                         if isStreaming && streamingChatId == chat.id {
                             StreamingMessageView(content: streamingContent)
                                 .id("streaming")
-                        } else if isLoading {
-                            HStack {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Processing...", comment: "Loading indicator text")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding()
-                            .id("loading")
+                                .padding(.top, 12)
                         }
                     }
                     .padding(.horizontal)
                     .padding(.bottom)
                 }
+                .scrollIndicators(isStreaming && streamingChatId == chat.id ? .hidden : .visible)
                 .defaultScrollAnchor(.bottom)
                 .id(chat.id)
                 .onChange(of: streamingContent) { oldValue, newValue in
-                    // Auto-scroll to bottom during streaming in THIS chat
-                    // Throttle to avoid excessive layout updates (prevents crashes)
+                    // Auto-scroll during streaming with throttling
+                    // Safe now because StreamingMessageView is outside LazyVStack
                     if isStreaming && streamingChatId == chat.id {
                         let now = Date()
-                        if now.timeIntervalSince(lastScrollTime) > 0.1 {
+                        if now.timeIntervalSince(lastScrollTime) > 0.3 {
                             lastScrollTime = now
-                            proxy.scrollTo("streaming", anchor: .bottom)
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                proxy.scrollTo("streaming", anchor: .bottom)
+                            }
                         }
                     }
                 }
@@ -268,31 +277,9 @@ struct ChatDetailView: View {
             currentMessage = chat.draft
             chat.draft = ""
 
-            // Scroll to the user's message
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation {
-                    scrollProxy?.scrollTo(userMessage.id, anchor: .bottom)
-                }
-            }
         } else {
             // Auto-send - message already exists, get it for title update
             currentMessage = sortedMessages.last?.content ?? ""
-
-            // Scroll to the user's message
-            if let lastMessage = sortedMessages.last {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    withAnimation {
-                        scrollProxy?.scrollTo(lastMessage.id, anchor: .bottom)
-                    }
-                }
-            }
-        }
-
-        // After a short delay, scroll to streaming indicator
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            withAnimation {
-                scrollProxy?.scrollTo("streaming", anchor: .bottom)
-            }
         }
 
         streamingTask = Task {
@@ -305,12 +292,15 @@ struct ChatDetailView: View {
                 }
 
                 await MainActor.run {
+                    var finalMessageId: UUID? = nil
+
                     // Only save if not cancelled
                     if !streamingContent.isEmpty {
                         // Create the final message with the complete streamed content
                         let assistantMessage = Message(content: streamingContent, isFromUser: false, chat: chat)
                         chat.messages.append(assistantMessage)
                         modelContext.insert(assistantMessage)
+                        finalMessageId = assistantMessage.id
 
                         // Update chat title with first message if needed
                         let newChatTitle = String(localized: "New Chat", comment: "Default chat title")
@@ -324,6 +314,15 @@ struct ChatDetailView: View {
                     streamingContent = ""
                     streamingTask = nil
                     streamingChatId = nil
+
+                    // Scroll to final message after streaming completes
+                    if let messageId = finalMessageId {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                scrollProxy?.scrollTo(messageId, anchor: .bottom)
+                            }
+                        }
+                    }
 
                     // Restore focus to input field
                     isInputFocused = true
@@ -350,16 +349,28 @@ struct ChatDetailView: View {
         streamingTask?.cancel()
         streamingTask = nil
 
+        var finalMessageId: UUID? = nil
+
         // Save partial response if any
         if !streamingContent.isEmpty {
             let assistantMessage = Message(content: streamingContent, isFromUser: false, chat: chat)
             chat.messages.append(assistantMessage)
             modelContext.insert(assistantMessage)
+            finalMessageId = assistantMessage.id
         }
 
         isStreaming = false
         streamingContent = ""
         streamingChatId = nil
+
+        // Scroll to final message after stopping
+        if let messageId = finalMessageId {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    scrollProxy?.scrollTo(messageId, anchor: .bottom)
+                }
+            }
+        }
 
         // Restore focus to input field after stopping
         isInputFocused = true

@@ -95,22 +95,28 @@ chatmyllm/
 
 ### 4. Auto-Scroll Behavior
 **Requirements:**
-- Scroll to bottom when user sends message
+- Scroll to bottom when opening a chat
 - Auto-scroll during streaming responses
+- Scroll to final message when streaming completes
+- Scroll to final message when user stops streaming
 - Maintain scroll position when switching chats
+- Hide scroll indicators during streaming to avoid jittery appearance
 
 **Implementation:**
 - `ScrollViewReader` with saved `scrollProxy`
-- `.defaultScrollAnchor(.bottom)` for initial positioning
+- `.defaultScrollAnchor(.bottom)` for initial positioning at bottom
 - `.id(chat.id)` forces ScrollView recreation on chat change
-- `.onChange(of: streamingContent)` triggers scroll during streaming
-- **Throttled scroll updates:** Maximum 10 updates/sec to prevent LazyVStack layout conflicts
-- Delayed scroll after message send to ensure DOM update
+- `.onChange(of: streamingContent)` triggers throttled scroll during streaming (max 3 updates/sec)
+- `.scrollIndicators(.hidden)` during streaming, `.visible` otherwise
+- Final scroll after streaming completion/stop to ensure message is visible
+- Smooth animations with `.easeOut(duration: 0.2-0.3)`
 
 **Critical Fix:**
-LazyVStack's prefetch system conflicts with rapid scroll updates during streaming. Original implementation crashed with `EXC_BREAKPOINT` in `LazyLayoutViewCacheC14signalPrefetchyyFyycfU_`. Fixed by:
-1. Throttling scroll updates to 0.1 second intervals (max 10 updates/sec) using `lastScrollTime` tracking
-2. Removing dynamic height recalculation entirely - TextEditor now uses fixed height with `.frame(height: 100)`
+LazyVStack's prefetch system conflicts with frequent view updates during streaming. Original implementation crashed with `EXC_BREAKPOINT` in `LazyLayoutViewCacheC14signalPrefetchyyFyycfU_`. Root cause: `StreamingMessageView` was **inside LazyVStack**, and each streaming chunk update (100-1000/sec) triggered LazyVStack's prefetch recalculation. Fixed by:
+1. **Moving StreamingMessageView outside LazyVStack** - wrapped in regular VStack, so streaming updates don't affect LazyVStack's prefetch
+2. LazyVStack now only contains static messages that don't change during streaming
+3. Auto-scroll is now safe with throttling (0.3 sec intervals) because updates happen outside LazyVStack
+4. Using fixed height for TextEditor (`.frame(height: 100)`) instead of dynamic recalculation
 
 ### 5. Input Field Focus Management
 **Behavior:**
@@ -187,10 +193,11 @@ LazyVStack's prefetch system conflicts with rapid scroll updates during streamin
 - User might want to compare model outputs
 - Flexibility for power users
 
-### Why LazyVStack Instead of VStack?
-- Performance: only renders visible messages
-- Critical for chats with hundreds of messages
-- Combined with `.id(chat.id)` for proper reset
+### Why LazyVStack for Messages + VStack for Streaming?
+- **LazyVStack for messages:** Only renders visible messages, critical for chats with hundreds of messages
+- **Regular VStack wrapper:** Allows streaming view outside LazyVStack to avoid prefetch conflicts
+- **Streaming view in VStack:** Frequent updates don't trigger LazyVStack recalculation
+- Combined with `.id(chat.id)` for proper reset on chat switch
 
 ### Why Separate Streaming from Regular API Call?
 - Different response formats (SSE vs JSON)
@@ -313,12 +320,16 @@ Three-column layout:
 
 ### 0.2 (Streaming Update)
 - Real-time streaming responses
-- Auto-scroll during streaming (throttled to prevent crashes)
 - Stop button to cancel generation
 - Per-chat streaming isolation
 - Improved focus management
 - UTF-8 encoding fixes
-- Fixed crash in LazyVStack during rapid scroll updates
+- Fixed critical crash in LazyVStack by moving `StreamingMessageView` outside of LazyVStack (frequent updates were triggering prefetch recalculation)
+- Fixed height input field (100pt) instead of dynamic recalculation
+- Hybrid layout: LazyVStack for messages, regular VStack wrapper for streaming content
+- Auto-scroll during streaming with throttling (max 3 updates/sec)
+- Scroll to final message after streaming completes or stops
+- Hidden scroll indicators during streaming to prevent jittery appearance
 
 ## Development Notes
 
@@ -328,7 +339,7 @@ Three-column layout:
 3. **UTF-8 corruption:** Buffer bytes before String conversion
 4. **Scroll not working:** Ensure .id() on ScrollView for reset
 5. **Settings not updating:** Use @Bindable not @State copy
-6. **LazyVStack constraint crash:** Throttle scroll updates (max 10/sec) and avoid dynamic height recalculation in favor of automatic sizing
+6. **LazyVStack constraint crash:** Never put frequently-updating views (like streaming content) inside LazyVStack - wrap in VStack and place streaming view outside LazyVStack; use fixed height for input fields
 
 ### Debugging Tips
 - Check streaming state: isStreaming, streamingChatId, streamingContent
