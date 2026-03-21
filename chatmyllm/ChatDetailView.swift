@@ -461,7 +461,30 @@ struct MarkdownText: View {
                     interpretedSyntax: .inlineOnlyPreservingWhitespace
                 )
             )
-            return Text(attributedString)
+
+            // Build Text manually with proper modifiers
+            var result = Text("")
+
+            for run in attributedString.runs {
+                let content = String(attributedString[run.range].characters)
+                var textSegment = Text(content)
+
+                if let inlinePresentationIntent = run.inlinePresentationIntent {
+                    // Apply semibold for bold text
+                    if inlinePresentationIntent.contains(.stronglyEmphasized) {
+                        textSegment = textSegment.fontWeight(.semibold)
+                    }
+                    // Keep italic as is
+                    if inlinePresentationIntent.contains(.emphasized) {
+                        textSegment = textSegment.italic()
+                    }
+                }
+
+                result = result + textSegment
+            }
+
+            return result
+
         } catch {
             return Text(text)
         }
