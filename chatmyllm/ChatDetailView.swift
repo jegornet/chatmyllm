@@ -438,6 +438,8 @@ struct MarkdownText: View {
                 result = result + formatCodeBlock(code)
             case .inlineCode(let code):
                 result = result + formatInlineCode(code)
+            case .heading(let text, let level):
+                result = result + formatHeading(text, level: level)
             }
         }
 
@@ -479,12 +481,66 @@ struct MarkdownText: View {
             .foregroundColor(isFromUser ? Color.white.opacity(0.95) : .primary)
     }
 
+    private func formatHeading(_ text: String, level: Int) -> Text {
+        let headingSizes: [Int: CGFloat] = [
+            1: fontSize * 1.3,
+            2: fontSize * 1.2,
+            3: fontSize * 1.15,
+            4: fontSize * 1.1,
+            5: fontSize * 1.05,
+            6: fontSize * 1.0
+        ]
+
+        let headingSize = headingSizes[level] ?? fontSize
+
+        return Text(text)
+                .font(.custom(fontName, size: headingSize))
+                .fontWeight(Font.Weight.semibold)
+    }
+
     private func parseMarkdown(_ markdown: String) -> [MarkdownPart] {
         var parts: [MarkdownPart] = []
         var currentText = ""
         var position = markdown.startIndex
 
         while position < markdown.endIndex {
+            // Check if we're at the start of a line for heading detection
+            let isLineStart = position == markdown.startIndex || markdown[markdown.index(before: position)] == "\n"
+
+            // Check for headings at the start of a line
+            if isLineStart && markdown[position] == "#" {
+                // Save accumulated text
+                if !currentText.isEmpty {
+                    parts.append(.text(currentText))
+                    currentText = ""
+                }
+
+                // Count number of # symbols
+                var hashCount = 0
+                var tempPos = position
+                while tempPos < markdown.endIndex && markdown[tempPos] == "#" && hashCount < 6 {
+                    hashCount += 1
+                    tempPos = markdown.index(after: tempPos)
+                }
+
+                // Check if there's a space after the hashes
+                if tempPos < markdown.endIndex && markdown[tempPos] == " " {
+                    // Skip the space
+                    tempPos = markdown.index(after: tempPos)
+
+                    // Extract heading text until end of line
+                    let headingStart = tempPos
+                    while tempPos < markdown.endIndex && markdown[tempPos] != "\n" {
+                        tempPos = markdown.index(after: tempPos)
+                    }
+
+                    let headingText = String(markdown[headingStart..<tempPos]).trimmingCharacters(in: .whitespaces)
+                    parts.append(.heading(headingText, level: hashCount))
+                    position = tempPos
+                    continue
+                }
+            }
+
             // Check for code blocks with triple backticks
             if markdown[position...].hasPrefix("```") {
                 // Save accumulated text
@@ -581,6 +637,7 @@ enum MarkdownPart {
     case text(String)
     case codeBlock(String, language: String?)
     case inlineCode(String)
+    case heading(String, level: Int)
 }
 
 struct StreamingMessageView: View {
