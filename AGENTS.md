@@ -331,6 +331,12 @@ Three-column layout:
 - Scroll to final message after streaming completes or stops
 - Hidden scroll indicators during streaming to prevent jittery appearance
 
+### 0.4 (Quick Chat Window)
+- Toggle Quick Chat Window with global hotkey (Option+Space)
+- Floating panel for quick message input
+- Automatic chat creation from quick chat
+- Settings toggle for quick chat feature
+
 ## Development Notes
 
 ### Common Pitfalls
@@ -357,4 +363,4 @@ Three-column layout:
 
 ---
 
-**Last Updated:** March 16, 2026 (Version 0.2)
+**Last Updated:** March 21, 2026 (Version 0.4)
