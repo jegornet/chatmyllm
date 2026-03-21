@@ -76,6 +76,14 @@ struct SettingsView: View {
                     .foregroundColor(.secondary)
             }
 
+            Section(String(localized: "Quick Chat", comment: "Quick chat section title")) {
+                Toggle(String(localized: "Open quick chat window on ⌥Space", comment: "Quick chat toggle label"), isOn: $settings.quickChatEnabled)
+
+                Text("Press Option+Space anywhere to open a quick chat window", comment: "Quick chat help text")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
             Section(String(localized: "Interface Font", comment: "Font section title")) {
                 Picker(String(localized: "Font", comment: "Font picker label"), selection: $settings.fontName) {
                     ForEach(availableFonts, id: \.self) { font in

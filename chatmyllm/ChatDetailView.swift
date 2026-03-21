@@ -197,16 +197,8 @@ struct ChatDetailView: View {
                 await loadModels()
             }
 
-            // Auto-send if last message is from user (new chat from EmptyStateView)
-            let shouldAutoSend = sortedMessages.last?.isFromUser == true && !isStreaming
-            if shouldAutoSend {
-                sendMessage(autoSend: true)
-            } else {
-                // Set focus on input field when opening existing chat
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    isInputFocused = true
-                }
-            }
+            // Auto-send if last message is from user (new chat from EmptyStateView or quick chat)
+            checkAndAutoSend()
         }
         .onDisappear {
             // Cancel streaming when view disappears (chat switched)
@@ -229,6 +221,9 @@ struct ChatDetailView: View {
         .onChange(of: chat.id) { oldValue, newValue in
             // Set focus when chat changes
             isInputFocused = true
+
+            // Also check auto-send when chat changes (e.g., from quick chat)
+            checkAndAutoSend()
         }
     }
 
@@ -245,6 +240,18 @@ struct ChatDetailView: View {
         } catch {
             await MainActor.run {
                 isLoadingModels = false
+            }
+        }
+    }
+
+    private func checkAndAutoSend() {
+        let shouldAutoSend = sortedMessages.last?.isFromUser == true && !isStreaming
+        if shouldAutoSend {
+            sendMessage(autoSend: true)
+        } else {
+            // Set focus on input field when opening existing chat
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isInputFocused = true
             }
         }
     }

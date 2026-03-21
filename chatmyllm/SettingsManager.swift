@@ -18,6 +18,7 @@ class SettingsManager {
     private let lineSpacingKey = "app_line_spacing"
     private let enabledModelsKey = "enabled_models"
     private let defaultModelIdKey = "default_model_id"
+    private let quickChatEnabledKey = "quick_chat_enabled"
 
     var apiKey: String {
         didSet {
@@ -69,6 +70,12 @@ class SettingsManager {
         }
     }
 
+    var quickChatEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(quickChatEnabled, forKey: quickChatEnabledKey)
+        }
+    }
+
     private init() {
         // Load values from UserDefaults
         self.apiKey = UserDefaults.standard.string(forKey: apiKeyKey) ?? ""
@@ -86,5 +93,6 @@ class SettingsManager {
         }
 
         self.defaultModelId = UserDefaults.standard.string(forKey: defaultModelIdKey) ?? "anthropic/claude-3.5-sonnet"
+        self.quickChatEnabled = UserDefaults.standard.bool(forKey: quickChatEnabledKey)
     }
 }

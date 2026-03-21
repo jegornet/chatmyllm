@@ -29,12 +29,37 @@ struct ContentView: View {
             }
         }
         .focusedValue(\.newChatAction, NewChatAction(action: addNewChat, canCreate: canCreateNewChat))
+        .onReceive(NotificationCenter.default.publisher(for: .createQuickChat)) { notification in
+            if let messageText = notification.userInfo?["messageText"] as? String {
+                createChatWithMessage(messageText)
+            }
+        }
     }
 
     private func addNewChat() {
         withAnimation {
             let newChat = Chat(modelId: settings.defaultModelId)
             modelContext.insert(newChat)
+            selectedChat = newChat
+        }
+    }
+
+    func createChatWithMessage(_ messageText: String) {
+        // Create new chat with selected model
+        let newChat = Chat(modelId: settings.defaultModelId)
+        modelContext.insert(newChat)
+
+        // Add user message
+        let userMessage = Message(content: messageText, isFromUser: true, chat: newChat)
+        newChat.messages.append(userMessage)
+        modelContext.insert(userMessage)
+
+        // Update chat title with first message
+        let title = String(messageText.prefix(50))
+        newChat.title = title
+
+        // Select the new chat - streaming will start in ChatDetailView
+        withAnimation {
             selectedChat = newChat
         }
     }

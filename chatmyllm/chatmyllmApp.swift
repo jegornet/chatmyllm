@@ -48,11 +48,21 @@ struct chatmyllmApp: App {
             ContentView()
                 .environment(settings)
                 .onAppear {
+                    // Set up quick chat hotkey on first appear
+                    setupQuickChatHotKey()
+
                     // Show settings if no API key is set
                     if !SettingsManager.shared.hasApiKey {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             openSettings()
                         }
+                    }
+                }
+                .onChange(of: settings.quickChatEnabled) { _, newValue in
+                    if newValue {
+                        setupQuickChatHotKey()
+                    } else {
+                        HotKeyManager.shared.unregister()
                     }
                 }
         }
@@ -74,5 +84,10 @@ struct chatmyllmApp: App {
 
     private func openSettings() {
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+
+    private func setupQuickChatHotKey() {
+        guard settings.quickChatEnabled else { return }
+        HotKeyManager.shared.register()
     }
 }
