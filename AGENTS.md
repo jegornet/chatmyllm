@@ -337,6 +337,11 @@ Three-column layout:
 - Automatic chat creation from quick chat
 - Settings toggle for quick chat feature
 
+### 0.4.1 (Markdown Headings)
+- Added support for Markdown headings (# through ######)
+- Headings displayed with appropriate font sizes and bold weight
+- Improved Markdown parsing to handle headings at line starts
+
 ## Development Notes
 
 ### Common Pitfalls
@@ -363,4 +368,4 @@ Three-column layout:
 
 ---
 
-**Last Updated:** March 21, 2026 (Version 0.4)
+**Last Updated:** March 21, 2026 (Version 0.4.1)
