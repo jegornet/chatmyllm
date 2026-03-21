@@ -425,32 +425,35 @@ struct MarkdownText: View {
     let lineSpacing: CGFloat
     let isFromUser: Bool
 
-    private var formattedText: Text {
-        // Split content into code blocks and regular text
+    var body: some View {
         let parts = parseMarkdown(content)
-        var result = Text("")
 
-        for part in parts {
-            switch part {
-            case .text(let text):
-                result = result + formatText(text)
-            case .codeBlock(let code, let language):
-                result = result + formatCodeBlock(code)
-            case .inlineCode(let code):
-                result = result + formatInlineCode(code)
-            case .heading(let text, let level):
-                result = result + formatHeading(text, level: level)
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
+                switch part {
+                case .text(let text):
+                    formatText(text)
+                        .font(.custom(fontName, size: fontSize))
+                        .lineSpacing(lineSpacing)
+                        .foregroundColor(isFromUser ? .white : .primary)
+                case .codeBlock(let code, _):
+                    formatCodeBlock(code)
+                        .font(.custom(fontName, size: fontSize))
+                        .lineSpacing(lineSpacing)
+                        .foregroundColor(isFromUser ? .white : .primary)
+                case .inlineCode(let code):
+                    formatInlineCode(code)
+                        .font(.custom(fontName, size: fontSize))
+                        .lineSpacing(lineSpacing)
+                        .foregroundColor(isFromUser ? .white : .primary)
+                case .heading(let text, let level):
+                    formatHeading(text, level: level)
+                        .foregroundColor(isFromUser ? .white : .primary)
+                case .table(let headers, let rows):
+                    formatTable(headers: headers, rows: rows)
+                }
             }
         }
-
-        return result
-    }
-
-    var body: some View {
-        formattedText
-            .font(.custom(fontName, size: fontSize))
-            .lineSpacing(lineSpacing)
-            .foregroundColor(isFromUser ? .white : .primary)
     }
 
     private func formatText(_ text: String) -> Text {
@@ -521,6 +524,44 @@ struct MarkdownText: View {
                 .fontWeight(Font.Weight.semibold)
     }
 
+    private func formatTable(headers: [String], rows: [[String]]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header row
+            HStack(spacing: 0) {
+                ForEach(Array(headers.enumerated()), id: \.offset) { index, header in
+                    Text(header.trimmingCharacters(in: .whitespaces))
+                        .font(.custom(fontName, size: fontSize))
+                        .fontWeight(.semibold)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.gray.opacity(0.2))
+                        .overlay(
+                            Rectangle()
+                                .stroke(Color.gray.opacity(0.4), lineWidth: 1)
+                        )
+                }
+            }
+
+            // Data rows
+            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+                HStack(spacing: 0) {
+                    ForEach(Array(row.enumerated()), id: \.offset) { colIndex, cell in
+                        Text(cell.trimmingCharacters(in: .whitespaces))
+                            .font(.custom(fontName, size: fontSize))
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .overlay(
+                                Rectangle()
+                                    .stroke(Color.gray.opacity(0.4), lineWidth: 1)
+                            )
+                    }
+                }
+            }
+        }
+        .foregroundColor(isFromUser ? .white : .primary)
+        .padding(.vertical, 4)
+    }
+
     private func parseMarkdown(_ markdown: String) -> [MarkdownPart] {
         var parts: [MarkdownPart] = []
         var currentText = ""
@@ -529,6 +570,22 @@ struct MarkdownText: View {
         while position < markdown.endIndex {
             // Check if we're at the start of a line for heading detection
             let isLineStart = position == markdown.startIndex || markdown[markdown.index(before: position)] == "\n"
+
+            // Check for tables at the start of a line
+            if isLineStart && markdown[position] == "|" {
+                // Try to parse table
+                if let tableResult = extractTable(from: markdown, startingAt: position) {
+                    // Save accumulated text
+                    if !currentText.isEmpty {
+                        parts.append(.text(currentText))
+                        currentText = ""
+                    }
+
+                    parts.append(.table(headers: tableResult.headers, rows: tableResult.rows))
+                    position = tableResult.end
+                    continue
+                }
+            }
 
             // Check for headings at the start of a line
             if isLineStart && markdown[position] == "#" {
@@ -654,6 +711,60 @@ struct MarkdownText: View {
         // No closing ``` found, treat rest as code
         return (content: contentStart..<markdown.endIndex, language: language, end: markdown.endIndex)
     }
+
+    private func extractTable(from markdown: String, startingAt position: String.Index) -> (headers: [String], rows: [[String]], end: String.Index)? {
+        var currentPos = position
+        var lines: [String] = []
+
+        // Collect all consecutive lines starting with |
+        while currentPos < markdown.endIndex {
+            // Check if line starts with |
+            if markdown[currentPos] != "|" {
+                break
+            }
+
+            // Extract line until newline or end
+            let lineStart = currentPos
+            while currentPos < markdown.endIndex && markdown[currentPos] != "\n" {
+                currentPos = markdown.index(after: currentPos)
+            }
+
+            let line = String(markdown[lineStart..<currentPos]).trimmingCharacters(in: .whitespaces)
+            lines.append(line)
+
+            // Skip newline if present
+            if currentPos < markdown.endIndex && markdown[currentPos] == "\n" {
+                currentPos = markdown.index(after: currentPos)
+            }
+        }
+
+        // Need at least 3 lines: header, separator, data
+        guard lines.count >= 3 else {
+            return nil
+        }
+
+        // Parse header row
+        let headerLine = lines[0]
+        let headers = headerLine.split(separator: "|")
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        // Skip separator line (line 1)
+        // Parse data rows (from line 2 onwards)
+        var rows: [[String]] = []
+        for i in 2..<lines.count {
+            let dataLine = lines[i]
+            let cells = dataLine.split(separator: "|")
+                .map { String($0).trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+
+            if !cells.isEmpty {
+                rows.append(cells)
+            }
+        }
+
+        return (headers: headers, rows: rows, end: currentPos)
+    }
 }
 
 enum MarkdownPart {
@@ -661,6 +772,7 @@ enum MarkdownPart {
     case codeBlock(String, language: String?)
     case inlineCode(String)
     case heading(String, level: Int)
+    case table(headers: [String], rows: [[String]])
 }
 
 struct StreamingMessageView: View {
