@@ -529,7 +529,7 @@ struct MarkdownText: View {
             // Header row
             HStack(spacing: 0) {
                 ForEach(Array(headers.enumerated()), id: \.offset) { index, header in
-                    Text(header.trimmingCharacters(in: .whitespaces))
+                    formatText(header.trimmingCharacters(in: .whitespaces))
                         .font(.custom(fontName, size: fontSize))
                         .fontWeight(.semibold)
                         .padding(8)
@@ -539,6 +539,7 @@ struct MarkdownText: View {
                             Rectangle()
                                 .stroke(Color.gray.opacity(0.4), lineWidth: 1)
                         )
+                        .foregroundColor(isFromUser ? .white : .primary)
                 }
             }
 
@@ -546,7 +547,7 @@ struct MarkdownText: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
                 HStack(spacing: 0) {
                     ForEach(Array(row.enumerated()), id: \.offset) { colIndex, cell in
-                        Text(cell.trimmingCharacters(in: .whitespaces))
+                        formatText(cell.trimmingCharacters(in: .whitespaces))
                             .font(.custom(fontName, size: fontSize))
                             .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -554,11 +555,11 @@ struct MarkdownText: View {
                                 Rectangle()
                                     .stroke(Color.gray.opacity(0.4), lineWidth: 1)
                             )
+                            .foregroundColor(isFromUser ? .white : .primary)
                     }
                 }
             }
         }
-        .foregroundColor(isFromUser ? .white : .primary)
         .padding(.vertical, 4)
     }
 
