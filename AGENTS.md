@@ -342,6 +342,12 @@ Three-column layout:
 - Headings displayed with appropriate font sizes and bold weight
 - Improved Markdown parsing to handle headings at line starts
 
+### 0.4.2 (Markdown Tables & Formatting)
+- Added support for Markdown tables with borders and formatting
+- Tables display with vertical lines, cell padding, and header styling
+- Bold text now renders as semibold instead of bold for better readability
+- Restructured MarkdownText to support complex layouts
+
 ## Development Notes
 
 ### Common Pitfalls
@@ -368,4 +374,4 @@ Three-column layout:
 
 ---
 
-**Last Updated:** March 21, 2026 (Version 0.4.1)
+**Last Updated:** March 21, 2026 (Version 0.4.2)
