@@ -348,6 +348,11 @@ Three-column layout:
 - Bold text now renders as semibold instead of bold for better readability
 - Restructured MarkdownText to support complex layouts
 
+### 0.4.3 (Table Cell Formatting)
+- Markdown formatting now works inside table cells
+- Bold, italic, and inline code formatting supported in table content
+- Consistent formatting across all Markdown elements including tables
+
 ## Development Notes
 
 ### Common Pitfalls
@@ -374,4 +379,4 @@ Three-column layout:
 
 ---
 
-**Last Updated:** March 21, 2026 (Version 0.4.2)
+**Last Updated:** March 21, 2026 (Version 0.4.3)

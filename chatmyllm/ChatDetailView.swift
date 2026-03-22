@@ -494,11 +494,9 @@ struct MarkdownText: View {
     }
 
     private func formatCodeBlock(_ code: String) -> Text {
-        Text("\n")
-        + Text(code)
+        Text(code)
             .font(.system(size: fontSize - 1, design: .monospaced))
             .foregroundColor(isFromUser ? Color.white.opacity(0.95) : .primary)
-        + Text("\n")
     }
 
     private func formatInlineCode(_ code: String) -> Text {
