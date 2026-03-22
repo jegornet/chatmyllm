@@ -169,6 +169,36 @@ LazyVStack's prefetch system conflicts with frequent view updates during streami
 - Auto-sends with `sendMessage(autoSend: true)` parameter
 - Streaming starts immediately, user sees response generation
 
+### 9. Selection Mode for Batch Operations
+**Requirement:** Allow users to select multiple chats for batch deletion.
+
+**Implementation:**
+- **State Management:** `isSelectionMode` state lives in ContentView and passed as `@Binding` to ChatListView
+- **Entry:** Right-click context menu shows "Select" option in normal mode
+- **UI Changes in Selection Mode:**
+  - Checkboxes appear on the right side of chat titles
+  - Toolbar switches from "New Chat" button to three action buttons:
+    - "Select All" - selects all chats in the list
+    - "Delete" - removes selected chats (disabled when nothing selected)
+    - "Exit" - returns to normal mode
+  - Context menu shows only "Exit Selection Mode" option
+- **Interaction:**
+  - Clicking anywhere on chat row toggles its selection
+  - NavigationLink is conditionally disabled in selection mode (uses `Group` with conditional rendering)
+  - Checkbox button also toggles selection
+- **Exit Conditions:**
+  - Clicking "Exit" button in toolbar
+  - Right-click → "Exit Selection Mode"
+  - Pressing Esc key (global handler in ContentView)
+  - Automatically after deleting selected chats
+- **Animation:** Smooth deletion animation with `.asymmetric` transition (move left + fade out)
+
+**Key Decisions:**
+- **Checkbox Position:** Right side of title (not left) for better visual hierarchy
+- **Global Esc Handler:** Placed in ContentView for app-wide functionality (works even when focus is in input field)
+- **Conditional Rendering vs Disabled:** Using `Group { if isSelectionMode { ... } else { NavigationLink { ... } } }` instead of `.disabled()` to prevent graying out entire list
+- **Auto-exit After Delete:** Improves UX by returning to normal mode after batch operation completes
+
 ## Technical Decisions
 
 ### Why SwiftData over Core Data?
@@ -222,6 +252,11 @@ LazyVStack's prefetch system conflicts with frequent view updates during streami
 - `streamingTask: Task?` - Cancellable task reference
 - `streamingChatId: UUID?` - Which chat is streaming
 
+### Selection Mode State
+- `isSelectionMode: Bool` - Selection mode active (ContentView @State, ChatListView @Binding)
+- `selectedChatsForAction: Set<UUID>` - Currently selected chat IDs for batch operations
+- State cleared automatically when exiting selection mode via `.onChange` observer
+
 ## UI/UX Patterns
 
 ### NavigationSplitView
@@ -234,6 +269,7 @@ Three-column layout:
 - `Cmd+N` - New chat
 - `Enter` - Send message (blocked during streaming)
 - `Shift+Enter` - New line in message
+- `Esc` - Exit selection mode (if active) or close current chat
 
 ### Visual Feedback
 - Blue bubble for user messages
@@ -353,6 +389,18 @@ Three-column layout:
 - Bold, italic, and inline code formatting supported in table content
 - Consistent formatting across all Markdown elements including tables
 
+### 0.5 (Selection Mode & Batch Operations)
+- **Selection Mode:** Multi-select chats for batch deletion
+- **Context Menu:** "Select" option to enter selection mode, "Exit Selection Mode" to leave
+- **Checkboxes:** Appear on the right side of chat titles in selection mode
+- **Toolbar Actions:** Dynamic toolbar with "Select All", "Delete Selected", and "Exit" buttons
+- **Smart Interaction:** Click anywhere on chat row to toggle selection (NavigationLink conditionally disabled)
+- **Global Esc Handler:** Press Esc to exit selection mode or close current chat (works app-wide, even in input fields)
+- **Smooth Animations:** Deletion animation with asymmetric transition (slide left + fade out)
+- **Auto-exit:** Selection mode automatically exits after batch deletion completes
+- **State Architecture:** Selection mode state managed in ContentView and passed to ChatListView via @Binding
+- **List Animation:** `.animation(.easeInOut(duration: 0.3))` on chat list for smooth reordering/removal
+
 ## Development Notes
 
 ### Common Pitfalls
@@ -362,6 +410,8 @@ Three-column layout:
 4. **Scroll not working:** Ensure .id() on ScrollView for reset
 5. **Settings not updating:** Use @Bindable not @State copy
 6. **LazyVStack constraint crash:** Never put frequently-updating views (like streaming content) inside LazyVStack - wrap in VStack and place streaming view outside LazyVStack; use fixed height for input fields
+7. **Disabled list in selection mode:** Don't use `.disabled()` on NavigationLink - it grays out entire content including buttons. Use conditional rendering with `Group { if ... else ... }` instead
+8. **Esc not working globally:** Place `.onKeyPress(.escape)` handler in ContentView on NavigationSplitView level, not in child views
 
 ### Debugging Tips
 - Check streaming state: isStreaming, streamingChatId, streamingContent
@@ -379,4 +429,4 @@ Three-column layout:
 
 ---
 
-**Last Updated:** March 21, 2026 (Version 0.4.3)
+**Last Updated:** March 22, 2026 (Version 0.5)
