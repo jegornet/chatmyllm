@@ -12,11 +12,11 @@ struct ChatListView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Chat.createdAt, order: .reverse) private var chats: [Chat]
     @Binding var selectedChat: Chat?
+    @Binding var isSelectionMode: Bool
 
     @Environment(SettingsManager.self) private var settings
     @FocusedValue(\.newChatAction) private var newChatAction
 
-    @State private var isSelectionMode = false
     @State private var selectedChatsForAction: Set<UUID> = []
 
     var body: some View {
@@ -103,6 +103,11 @@ struct ChatListView: View {
                     }
                     .disabled(newChatAction?.canCreate == false)
                 }
+            }
+        }
+        .onChange(of: isSelectionMode) { oldValue, newValue in
+            if !newValue {
+                selectedChatsForAction.removeAll()
             }
         }
     }

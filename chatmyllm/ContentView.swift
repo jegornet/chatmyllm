@@ -12,6 +12,7 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var selectedChat: Chat?
     @State private var settings = SettingsManager.shared
+    @State private var isSelectionMode = false
 
     var canCreateNewChat: Bool {
         // Can create new chat if no chat is selected, or if selected chat has messages
@@ -20,7 +21,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            ChatListView(selectedChat: $selectedChat)
+            ChatListView(selectedChat: $selectedChat, isSelectionMode: $isSelectionMode)
         } detail: {
             if let chat = selectedChat {
                 ChatDetailView(chat: chat)
@@ -33,6 +34,18 @@ struct ContentView: View {
             if let messageText = notification.userInfo?["messageText"] as? String {
                 createChatWithMessage(messageText)
             }
+        }
+        .onKeyPress(.escape) {
+            if isSelectionMode {
+                withAnimation {
+                    isSelectionMode = false
+                }
+                return .handled
+            } else if selectedChat != nil {
+                selectedChat = nil
+                return .handled
+            }
+            return .ignored
         }
     }
 
