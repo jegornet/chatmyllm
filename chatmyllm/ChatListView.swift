@@ -207,16 +207,6 @@ struct ChatListView: View {
     @ViewBuilder
     private func chatRowContent(for chat: Chat) -> some View {
         HStack(spacing: 8) {
-            if isSelectionMode {
-                Button {
-                    toggleSelection(for: chat)
-                } label: {
-                    Image(systemName: selectedChatsForAction.contains(chat.id) ? "checkmark.square.fill" : "square")
-                        .foregroundColor(selectedChatsForAction.contains(chat.id) ? .blue : .secondary)
-                }
-                .buttonStyle(.plain)
-            }
-
             VStack(alignment: .leading, spacing: 4) {
                 Text(chat.title)
                     .font(settings.customFont)
@@ -230,7 +220,15 @@ struct ChatListView: View {
 
             Spacer()
 
-            if !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedChat?.id != chat.id {
+            if isSelectionMode {
+                Button {
+                    toggleSelection(for: chat)
+                } label: {
+                    Image(systemName: selectedChatsForAction.contains(chat.id) ? "checkmark.square.fill" : "square")
+                        .foregroundColor(selectedChatsForAction.contains(chat.id) ? .blue : .secondary)
+                }
+                .buttonStyle(.plain)
+            } else if !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedChat?.id != chat.id {
                 Image(systemName: "pencil")
                     .font(.caption)
                     .foregroundColor(.secondary)
