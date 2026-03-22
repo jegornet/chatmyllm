@@ -8,6 +8,7 @@ A native macOS chat application for interacting with LLM models via OpenRouter A
 - **Customizable Interface** - Adjust font, size, and line spacing
 - **Localization** - English and Russian interface
 - **Native macOS** - Built with SwiftUI for modern macOS
+- **Quick Chat** - Start a new chat via system-wide shortcut ⌥Space
 
 ## Requirements
 

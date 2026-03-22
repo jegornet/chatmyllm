@@ -401,6 +401,23 @@ Three-column layout:
 - **State Architecture:** Selection mode state managed in ContentView and passed to ChatListView via @Binding
 - **List Animation:** `.animation(.easeInOut(duration: 0.3))` on chat list for smooth reordering/removal
 
+### 0.5.1 (Window Management & Quick Chat Improvements)
+- **Hide Instead of Close:** Main window hides (not closes) when clicking close button or pressing Cmd-W
+- **Persistent App:** Application stays running in dock when main window is hidden
+- **Window Frame Preservation:** Window size and position are saved and restored automatically
+  - Manual saving/restoring via UserDefaults with NSStringFromRect/NSRectFromString
+  - AppDelegate with NSWindowDelegate handles window lifecycle
+  - Frame saved on move, resize, and hide events
+  - Frame restored immediately on window configuration (no animation)
+- **Quick Chat Enhancement:** Quick Chat now shows main window if it was hidden
+  - Fixed window search to include hidden windows (removed `isVisible` check)
+  - `makeKeyAndOrderFront(nil)` brings hidden windows back to screen
+- **Window Delegate Architecture:**
+  - AppDelegate observes `didBecomeMainNotification` for new windows
+  - Filters out NSPanel instances (Quick Chat) to prevent interference
+  - No delays or async dispatches for instant frame restoration
+- **Fixed Quick Chat Bug:** Prevented multiple chat creation by excluding NSPanel from window configuration
+
 ## Development Notes
 
 ### Common Pitfalls
@@ -412,6 +429,8 @@ Three-column layout:
 6. **LazyVStack constraint crash:** Never put frequently-updating views (like streaming content) inside LazyVStack - wrap in VStack and place streaming view outside LazyVStack; use fixed height for input fields
 7. **Disabled list in selection mode:** Don't use `.disabled()` on NavigationLink - it grays out entire content including buttons. Use conditional rendering with `Group { if ... else ... }` instead
 8. **Esc not working globally:** Place `.onKeyPress(.escape)` handler in ContentView on NavigationSplitView level, not in child views
+9. **Window delegate interfering with panels:** When implementing NSWindowDelegate, always check `!(window is NSPanel)` to exclude Quick Chat and other panels from main window management
+10. **Window frame restoration flickering:** Never use delays or async dispatches for frame restoration - apply frame immediately with `display: false` parameter in `setFrame()`
 
 ### Debugging Tips
 - Check streaming state: isStreaming, streamingChatId, streamingContent
@@ -429,4 +448,4 @@ Three-column layout:
 
 ---
 
-**Last Updated:** March 22, 2026 (Version 0.5)
+**Last Updated:** March 22, 2026 (Version 0.5.1)
