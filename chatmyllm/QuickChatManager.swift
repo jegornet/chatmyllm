@@ -88,20 +88,22 @@ class QuickChatManager {
 
         hideQuickChat()
 
-        // Activate app and bring main window forward
+        // Activate app
         NSApp.activate(ignoringOtherApps: true)
 
-        // Find main window
+        // Find main window (including hidden ones)
+        let mainWindow = NSApp.windows.first { window in
+            !(window is NSPanel) &&
+            !window.title.localizedCaseInsensitiveContains("settings")
+        }
+
+        // Show main window if hidden, or bring to front if visible
+        if let window = mainWindow {
+            window.makeKeyAndOrderFront(nil)
+        }
+
+        // Create chat after window is shown
         DispatchQueue.main.async {
-            let mainWindow = NSApp.windows.first { window in
-                !(window is NSPanel) &&
-                window.isVisible &&
-                !window.title.localizedCaseInsensitiveContains("settings")
-            }
-
-            mainWindow?.makeKeyAndOrderFront(nil)
-
-            // Create chat after window is shown
             NotificationCenter.default.post(
                 name: .createQuickChat,
                 object: nil,
