@@ -16,45 +16,54 @@ struct ChatListView: View {
     @Environment(SettingsManager.self) private var settings
     @FocusedValue(\.newChatAction) private var newChatAction
 
+    @State private var isSelectionMode = false
+    @State private var selectedChatsForAction: Set<UUID> = []
+
     var body: some View {
         List(selection: $selectedChat) {
-            ForEach(chats) { chat in
-                NavigationLink(value: chat) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(chat.title)
-                                .font(settings.customFont)
-                                .lineSpacing(settings.lineSpacing)
-                                .lineLimit(1)
-
-                            Text(chat.createdAt, format: .dateTime)
-                                .font(.custom(settings.fontName, size: settings.fontSize * 0.7))
-                                .foregroundColor(.secondary)
-                        }
-
-                        Spacer()
-
-                        if !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedChat?.id != chat.id {
-                            Image(systemName: "pencil")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                ForEach(chats) { chat in
+                    Group {
+                        if isSelectionMode {
+                            chatRowContent(for: chat)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    toggleSelection(for: chat)
+                                }
+                        } else {
+                            NavigationLink(value: chat) {
+                                chatRowContent(for: chat)
+                            }
                         }
                     }
-                    .padding(.vertical, 2)
-                }
                 .contextMenu {
-                    Button {
-                        renameChat(chat)
-                    } label: {
-                        Label(String(localized: "Rename", comment: "Rename context menu"), systemImage: "pencil")
-                    }
+                    if isSelectionMode {
+                        Button {
+                            exitSelectionMode()
+                        } label: {
+                            Label(String(localized: "Exit Selection Mode", comment: "Exit selection mode context menu"), systemImage: "arrow.uturn.backward")
+                        }
+                    } else {
+                        Button {
+                            enterSelectionMode(for: chat)
+                        } label: {
+                            Label(String(localized: "Select", comment: "Select context menu"), systemImage: "checkmark.circle")
+                        }
 
-                    Divider()
+                        Divider()
 
-                    Button(role: .destructive) {
-                        deleteChat(chat)
-                    } label: {
-                        Label(String(localized: "Delete", comment: "Delete context menu"), systemImage: "trash")
+                        Button {
+                            renameChat(chat)
+                        } label: {
+                            Label(String(localized: "Rename", comment: "Rename context menu"), systemImage: "pencil")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            deleteChat(chat)
+                        } label: {
+                            Label(String(localized: "Delete", comment: "Delete context menu"), systemImage: "trash")
+                        }
                     }
                 }
             }
@@ -62,11 +71,38 @@ struct ChatListView: View {
         }
         .navigationSplitViewColumnWidth(min: 200, ideal: 250)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: addNewChat) {
-                    Label(String(localized: "New Chat", comment: "New chat button"), systemImage: "plus")
+            if isSelectionMode {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        selectAllChats()
+                    } label: {
+                        Label("Select All", systemImage: "checklist")
+                    }
                 }
-                .disabled(newChatAction?.canCreate == false)
+
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        deleteSelectedChats()
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .disabled(selectedChatsForAction.isEmpty)
+                }
+
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        exitSelectionMode()
+                    } label: {
+                        Label("Exit", systemImage: "arrow.uturn.backward")
+                    }
+                }
+            } else {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: addNewChat) {
+                        Label(String(localized: "New Chat", comment: "New chat button"), systemImage: "plus")
+                    }
+                    .disabled(newChatAction?.canCreate == false)
+                }
             }
         }
     }
@@ -120,5 +156,81 @@ struct ChatListView: View {
                 chat.title = newTitle
             }
         }
+    }
+
+    private func enterSelectionMode(for chat: Chat) {
+        withAnimation {
+            isSelectionMode = true
+            selectedChatsForAction = [chat.id]
+        }
+    }
+
+    private func toggleSelection(for chat: Chat) {
+        if selectedChatsForAction.contains(chat.id) {
+            selectedChatsForAction.remove(chat.id)
+        } else {
+            selectedChatsForAction.insert(chat.id)
+        }
+    }
+
+    private func exitSelectionMode() {
+        withAnimation {
+            isSelectionMode = false
+            selectedChatsForAction.removeAll()
+        }
+    }
+
+    private func selectAllChats() {
+        selectedChatsForAction = Set(chats.map { $0.id })
+    }
+
+    private func deleteSelectedChats() {
+        withAnimation {
+            for chat in chats {
+                if selectedChatsForAction.contains(chat.id) {
+                    if selectedChat?.id == chat.id {
+                        selectedChat = nil
+                    }
+                    modelContext.delete(chat)
+                }
+            }
+            selectedChatsForAction.removeAll()
+            isSelectionMode = false
+        }
+    }
+
+    @ViewBuilder
+    private func chatRowContent(for chat: Chat) -> some View {
+        HStack(spacing: 8) {
+            if isSelectionMode {
+                Button {
+                    toggleSelection(for: chat)
+                } label: {
+                    Image(systemName: selectedChatsForAction.contains(chat.id) ? "checkmark.square.fill" : "square")
+                        .foregroundColor(selectedChatsForAction.contains(chat.id) ? .blue : .secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(chat.title)
+                    .font(settings.customFont)
+                    .lineSpacing(settings.lineSpacing)
+                    .lineLimit(1)
+
+                Text(chat.createdAt, format: .dateTime)
+                    .font(.custom(settings.fontName, size: settings.fontSize * 0.7))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            if !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedChat?.id != chat.id {
+                Image(systemName: "pencil")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
