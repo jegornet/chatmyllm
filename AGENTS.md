@@ -418,6 +418,17 @@ Three-column layout:
   - No delays or async dispatches for instant frame restoration
 - **Fixed Quick Chat Bug:** Prevented multiple chat creation by excluding NSPanel from window configuration
 
+### 0.5.2 (Markdown Spacing Improvements)
+- **Fixed Excessive Spacing:** Removed large gaps between Markdown elements (headings, text, tables)
+- **Whitespace-Only Block Filtering:** Parser now ignores text blocks containing only whitespace and newlines
+- **Trimmed Text Blocks:** All text blocks are trimmed before being added to the render list
+- **Smart Spacing:** VStack spacing now dynamically calculated as `fontSize + lineSpacing` for consistent visual hierarchy
+- **Implementation:**
+  - Modified `parseMarkdown()` to check `trimmingCharacters(in: .whitespacesAndNewlines)` before adding text blocks
+  - Applied trimming when saving text before tables, headings, code blocks, and inline code
+  - Changed VStack spacing from fixed `4` to dynamic `fontSize + lineSpacing`
+  - Prevents double newlines (`\n\n`) from creating empty blocks with excessive spacing
+
 ## Development Notes
 
 ### Common Pitfalls
@@ -448,4 +459,4 @@ Three-column layout:
 
 ---
 
-**Last Updated:** March 22, 2026 (Version 0.5.1)
+**Last Updated:** March 22, 2026 (Version 0.5.2)
