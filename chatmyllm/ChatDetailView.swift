@@ -428,7 +428,7 @@ struct MarkdownText: View {
     var body: some View {
         let parts = parseMarkdown(content)
 
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: fontSize + lineSpacing) {
             ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
                 switch part {
                 case .text(let text):
@@ -574,11 +574,12 @@ struct MarkdownText: View {
             if isLineStart && markdown[position] == "|" {
                 // Try to parse table
                 if let tableResult = extractTable(from: markdown, startingAt: position) {
-                    // Save accumulated text
-                    if !currentText.isEmpty {
-                        parts.append(.text(currentText))
-                        currentText = ""
+                    // Save accumulated text (only if it's not just whitespace)
+                    let trimmedText = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmedText.isEmpty {
+                        parts.append(.text(trimmedText))
                     }
+                    currentText = ""
 
                     parts.append(.table(headers: tableResult.headers, rows: tableResult.rows))
                     position = tableResult.end
@@ -588,11 +589,12 @@ struct MarkdownText: View {
 
             // Check for headings at the start of a line
             if isLineStart && markdown[position] == "#" {
-                // Save accumulated text
-                if !currentText.isEmpty {
-                    parts.append(.text(currentText))
-                    currentText = ""
+                // Save accumulated text (only if it's not just whitespace)
+                let trimmedText = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedText.isEmpty {
+                    parts.append(.text(trimmedText))
                 }
+                currentText = ""
 
                 // Count number of # symbols
                 var hashCount = 0
@@ -622,11 +624,12 @@ struct MarkdownText: View {
 
             // Check for code blocks with triple backticks
             if markdown[position...].hasPrefix("```") {
-                // Save accumulated text
-                if !currentText.isEmpty {
-                    parts.append(.text(currentText))
-                    currentText = ""
+                // Save accumulated text (only if it's not just whitespace)
+                let trimmedText = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedText.isEmpty {
+                    parts.append(.text(trimmedText))
                 }
+                currentText = ""
 
                 // Find the end of the code block
                 if let codeBlockRange = extractCodeBlock(from: markdown, startingAt: position) {
@@ -639,11 +642,12 @@ struct MarkdownText: View {
 
             // Check for inline code with single backticks
             if markdown[position] == "`" && !markdown[position...].hasPrefix("```") {
-                // Save accumulated text
-                if !currentText.isEmpty {
-                    parts.append(.text(currentText))
-                    currentText = ""
+                // Save accumulated text (only if it's not just whitespace)
+                let trimmedText = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedText.isEmpty {
+                    parts.append(.text(trimmedText))
                 }
+                currentText = ""
 
                 // Find the closing backtick
                 var nextPos = markdown.index(after: position)
@@ -663,9 +667,10 @@ struct MarkdownText: View {
             position = markdown.index(after: position)
         }
 
-        // Add any remaining text
-        if !currentText.isEmpty {
-            parts.append(.text(currentText))
+        // Add any remaining text (only if it's not just whitespace)
+        let trimmedText = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedText.isEmpty {
+            parts.append(.text(trimmedText))
         }
 
         return parts.isEmpty ? [.text(markdown)] : parts
