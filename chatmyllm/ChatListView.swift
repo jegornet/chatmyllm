@@ -35,6 +35,10 @@ struct ChatListView: View {
                             }
                         }
                     }
+                    .transition(.asymmetric(
+                        insertion: .opacity,
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                    ))
                 .contextMenu {
                     if isSelectionMode {
                         Button {
@@ -69,6 +73,7 @@ struct ChatListView: View {
             }
             .onDelete(perform: deleteChats)
         }
+        .animation(.easeInOut(duration: 0.3), value: chats.map { $0.id })
         .navigationSplitViewColumnWidth(min: 200, ideal: 250)
         .toolbar {
             if isSelectionMode {
